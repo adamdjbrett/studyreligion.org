@@ -1,0 +1,59 @@
+name: Deploy to XMIT
+
+on:
+  push:
+    branches: ["main", "master"]
+  workflow_dispatch:
+    inputs:
+      site:
+        description: "XMIT site/domain (example: studyreligion.xmit.dev)"
+        required: false
+        type: string
+
+concurrency:
+  group: deploy-xmit-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      XMIT_SITE: studyreligion.xmit.dev
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify site files
+        run: |
+          if [ ! -f index.html ]; then
+            echo "index.html not found at repository root" >&2
+            exit 1
+          fi
+          ls -lah | head -n 20
+
+      - name: Deploy to XMIT (CLI)
+        env:
+          XMIT_KEY: ${{ secrets.XMIT_KEY }}
+        run: |
+          if [ -z "$XMIT_KEY" ]; then
+            echo "XMIT_KEY secret is not set" >&2
+            exit 1
+          fi
+          SITE_INPUT="${{ github.event_name == 'workflow_dispatch' && inputs.site || '' }}"
+          if [ -n "$SITE_INPUT" ]; then
+            export XMIT_SITE="$SITE_INPUT"
+          fi
+          if [ -z "$XMIT_SITE" ]; then
+            echo "XMIT site/domain not provided. Define repo variable XMIT_SITE or pass the site input." >&2
+            exit 1
+          fi
+          echo "Deploying repository root to $XMIT_SITE via XMIT CLI"
+          npx -y @xmit.co/xmit "$XMIT_SITE" . || { echo "XMIT deploy failed" >&2; exit 1; }
+
+      - name: Post-deploy summary
+        run: |
+          echo "Deployment attempt finished for $XMIT_SITE"
+          echo "Visit: https://$XMIT_SITE"
